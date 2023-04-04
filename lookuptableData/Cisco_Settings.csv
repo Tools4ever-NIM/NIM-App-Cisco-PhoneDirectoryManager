@@ -1,0 +1,13 @@
+ID,Value
+MailEnabled,1
+ParkingAutoDeleteEnabled,1
+ParkingExtensionLower,9000
+ParkingExtensionUpper,9999
+ParkingRetentionDays,30
+EnableLdapNewUser,1
+EnableLdapOnTransfer,1
+AddSmtpOnNewUser,1
+AddSmtpOnTransfer,1
+AddUMNewUser,1
+AddUMOnTransfer,1
+UMExternalServiceId,ff285289-df56-4404-96f6-3eff87d73637
