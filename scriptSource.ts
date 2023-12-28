@@ -7,6 +7,10 @@ import { nim } from "./nim";
   const systemname_Unity = "CiscoUnity";
   const parkedmailbox_ExtensionUpper = 9000
   const parkedmailbox_ExtensionLower = 9999
+  const ldap_enabled = true
+  const ldap_enabled_on_transfer = true
+  const add_smtp_new_user = true
+  const add_unifiedmessaging_user = true
 // #endregion
 
 // #region Private Functions
@@ -493,10 +497,6 @@ import { nim } from "./nim";
     } else {
       nim.logInfo("Skipping Soft Phone for new owner");
     }
-    // TODO: If condition, Soft phones enabled?
-    // TODO: process room templates
-
-    // TODO: Target Action
     // #endregion
 
     // #region Update New Owner associated devices with all phone names
@@ -504,7 +504,9 @@ import { nim } from "./nim";
       const newOwnerDevices = await getOwnerAssociatedDevices(NewUserId);
       for (const device of newOwnerDevices) {
         nim.logInfo(`Set Name for Device [${device.name}]`);
-        // TODO: Target Action, Possible need to allow the update to do multiple devices...I hope not.
+        if(!readOnly) {
+          // TODO: Target Action, Possible need to allow the update to do multiple devices...I hope not.
+        }
       };
     // #endregion
 
@@ -513,7 +515,9 @@ import { nim } from "./nim";
       nim.logInfo(
         `newOwnerUsername: [${NewUserId}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName}]`
       );
-      //TODO: Target action. Need to build the update user to also optional attributes. 
+      if(!readOnly) {
+        //TODO: Target action. Need to build the update user to also optional attributes. 
+      }
     // #endregion
 
     // #region Update IPPhone & telephoneNumber for AD User
@@ -522,8 +526,9 @@ import { nim } from "./nim";
       );
 
       // TODO: Update Target Action
+      if(!readOnly) {
       //let updatenewAdUser = await nim.targetSystemFunctionRun(systemname_AD, 'UserUpdate',{ objectGUID: newOwnerADUser?.objectGUID ?? '', ipPhone: cucmPhoneLine.dirn_pattern, telephoneNumber: cucmPhoneLine.dirn_pattern })
-      
+      }
     // #endregion
 
     // #region Reassign current extension owner, Update AD User
@@ -557,31 +562,48 @@ import { nim } from "./nim";
 
     if(newOwnerUnityAccount && newOwnerUnityAccount.ObjectId.length < 1) {
       nim.logInfo("Creating Unity user account for new owner") 
-      // TODO Target action create unity account
-      // Create Unity User
-      // Add SMTP Address
-      // Add Unified Messaging
+      if(!readOnly) {
+        //TODO Optional fields issue
+        let newUnityUser = await nim.targetSystemFunctionRun(systemname_Unity, 'UserCreate',{  Alias: NewUserId, EmailAddress: newOwnerADUser?.mail ?? '', FirstName: newOwnerADUser?.givenName ?? '', LastName: newOwnerADUser?.sn ?? '', ldap_enabled: ldap_enabled, extension: cucmPhoneLine.dirn_pattern, TemplateAlias: Building?.UnityUserTemplateName ?? '', CreateSmtpProxyFromCorp: true})
+      
+        if(add_smtp_new_user) {
+          let smtpUser = await nim.targetSystemFunctionRun(systemname_Unity,'SmtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newUnityUser.ObjectId })
+        }
+
+        if(add_unifiedmessaging_user) {
+          //TODO Error
+          //let umUser = await nim.targetSystemFunctionRun(systemname_Unity, '')
+        }
+      }
     } else {
       nim.logInfo("Updating Unity user account for new owner")
-      // Update User Extension
-      // Add/Update SMTP Address
-      // Add/Update Unified Messaging
+      if(!readOnly) {
+        //let updateUnityUser = await nim.targetSystemFunctionRun(systemname_Unity,'UserUpdate')
+        // Update User Extension
+        // Add/Update SMTP Address
+        // Add/Update Unified Messaging
+      }
+      
 
     }
     // #endregion
 
     // #region Update New Owner Call Schedule
       nim.logInfo("Updating Unity call schedule for new owner")
-      // TODO: Target Action
+      if(!readOnly) {
+        // TODO: Target Action
+      }
     // #endregion
 
     // #region New Owner Transfer Rules
       nim.logInfo("Checking if User Transfer Rules enabled for Building")
       if(Building?.UnityUserTransferRulesEnabled) {
           nim.logInfo("Updating User Transfer Rules")
-          //TODO Target Action Update Standard Transfer Rule
-          //TODO Target Action Update Closed Transfer Rule
-          //TODO Target Action Update Alternative Transfer Rule
+          if(!readOnly) {
+            //TODO Target Action Update Standard Transfer Rule
+            //TODO Target Action Update Closed Transfer Rule
+            //TODO Target Action Update Alternative Transfer Rule
+          }
       }
     // #endregion
   }
