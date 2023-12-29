@@ -298,6 +298,11 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
     return uniqueRandom; // Return the unique random number as a string
   }
 
+/**
+ * Gets current datetime in a specific string format
+ * 
+ * @return {string} returns datetime string in YYYY-MM-DD HH:MM:SS:SSS
+ */
   async function getCurrentTimestamp() {
     // Get the current date and time
     const now = new Date();
@@ -316,6 +321,13 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
     return formattedDate
   }
 
+  /**
+ * Formats string to delete anything after first match
+ * 
+ * @param {string} text - Source text
+ * @param {string} pattern - Pattern to match
+ * @return {string} Modified string
+ */
   function deleteAfterFirstMatch(text: string, pattern: string): string {
     const index = text.indexOf(pattern); // Find the index of the first occurrence of the pattern
     if (index >= 0) {
