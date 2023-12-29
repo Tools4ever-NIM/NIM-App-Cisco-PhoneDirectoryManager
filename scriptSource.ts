@@ -1,4 +1,10 @@
-import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfCiscoUCMPhonesCreateCallArgs, TsfCiscoUnityUserCreateCallArgs, TsfCiscoUnityUsersexternalserviceaccountsCreateCallArgs, TsfCiscoUnityUserUpdateCallArgs, TsfInternalCisco_MailboxParking_createCallArgs } from "./nim";
+import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfCiscoUCMPhonesCreateCallArgs, TsfCiscoUnityCallhandlertransferoptionsUpdateCallArgs, TsfCiscoUnityUserCreateCallArgs, TsfCiscoUnityUserscallhandlersUpdateCallArgs, TsfCiscoUnityUsersexternalserviceaccountsCreateCallArgs, TsfCiscoUnityUserUpdateCallArgs, TsfInternalCisco_MailboxParking_createCallArgs } from "./nim";
+
+//TODO List
+// - Finalize Target Actions
+// - Determine best way to store configuration versus hardcoding in script
+// - Check Target action error handling
+// - Test
 
 // #region Configuration
   const readOnly = true
@@ -573,7 +579,6 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
         `Updating [ipPhone] and [telephoneNumber] for New Owner to [${cucmPhoneLine.dirn_pattern}]`
       );
 
-      // TODO: Update Target Action
       if(!readOnly) {
         let updatenewAdUser = await nim.targetSystemFunctionRun(systemname_AD, 'UserUpdate',{ objectGUID: newOwnerADUser?.objectGUID ?? '', ipPhone: cucmPhoneLine.dirn_pattern, telephoneNumber: cucmPhoneLine.dirn_pattern } as TsfADUserUpdateCallArgs)
       }
@@ -618,10 +623,8 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
     if(newOwnerUnityUser && newOwnerUnityUser.ObjectId.length < 1) {
       nim.logInfo("Creating Unity user account for new owner") 
       if(!readOnly) {
-        let LdapType = '0'
-        if(ldap_enabled) { LdapType = '3'}
+        let LdapType = ldap_enabled ? '3' : '0';
 
-        //TODO Optional fields issue
         let newUnityUser = await nim.targetSystemFunctionRun(systemname_Unity, 'UserCreate',{ Alias: NewUserId, EmailAddress: newOwnerADUser?.mail ?? '', FirstName: newOwnerADUser?.givenName ?? '', LastName: newOwnerADUser?.sn ?? '', LdapType: LdapType,DtmfAccessId: cucmPhoneLine.dirn_pattern, TemplateAlias: Building?.UnityUserTemplateName ?? '', CreateSmtpProxyFromCorp: 'true'} as TsfCiscoUnityUserCreateCallArgs)
       
         if(add_smtp_new_user) {
@@ -638,13 +641,15 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
             SubscriberObjectId: newUnityUser?.ObjectId ?? ''
           } as TsfCiscoUnityUsersexternalserviceaccountsCreateCallArgs)
         }
+
+        newOwnerUnityUser = await getUnityUser(NewUserId,false)
       }
     } else {
       nim.logInfo("Updating Unity user account for new owner")
       if(!readOnly) {
 
         nim.logInfo(`Updating Unity user [${newOwnerUnityUser?.ObjectId}] to extension [${cucmPhoneLine.dirn_pattern}]`)
-          let updateParkedUnityUser = await nim.targetSystemFunctionRun(systemname_Unity, 'UserUpdate', {
+          let updateUnityUser = await nim.targetSystemFunctionRun(systemname_Unity, 'UserUpdate', {
             ObjectId: newOwnerUnityUser?.ObjectId,
             DtmfAccessId: cucmPhoneLine.dirn_pattern
           } as TsfCiscoUnityUserUpdateCallArgs)
@@ -672,7 +677,10 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
     // #region Update New Owner Call Schedule
       nim.logInfo("Updating Unity call schedule for new owner")
       if(!readOnly) {
-        // TODO: Target Action
+        let UpdateCallSchedule = await nim.targetSystemFunctionRun(systemname_Unity,'UserscallhandlersUpdate', {
+          ScheduleSetObjectId: Building?.UnityUserCallScheduleObjectId ?? '',
+          ObjectId: newOwnerUnityUser?.CallHandlerObjectId ?? ''
+        } as TsfCiscoUnityUserscallhandlersUpdateCallArgs)
       }
     // #endregion
 
@@ -681,9 +689,24 @@ import { nim, TsfADUserUpdateCallArgs, TsfCiscoUCMPhoneLinesUpdateCallArgs, TsfC
       if(Building?.UnityUserTransferRulesEnabled) {
           nim.logInfo("Updating User Transfer Rules")
           if(!readOnly) {
-            //TODO Target Action Update Standard Transfer Rule
-            //TODO Target Action Update Closed Transfer Rule
-            //TODO Target Action Update Alternative Transfer Rule
+            
+            let UpdateTransferStandard = await nim.targetSystemFunctionRun(systemname_Unity,'CallhandlertransferoptionsUpdate', {
+              Action: Building?.UnityUserStandardTransferAction,
+              Enabled: Building?.UnityUserStandardTransferEnabled,
+              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
+            } as TsfCiscoUnityCallhandlertransferoptionsUpdateCallArgs)
+
+            let UpdateTransferClosed = await nim.targetSystemFunctionRun(systemname_Unity,'CallhandlertransferoptionsUpdate', {
+              Action: Building?.UnityUserClosedTransferAction,
+              Enabled: Building?.UnityUserClosedTransferEnabled,
+              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
+            } as TsfCiscoUnityCallhandlertransferoptionsUpdateCallArgs)
+
+            let UpdateTransferAlternate = await nim.targetSystemFunctionRun(systemname_Unity,'CallhandlertransferoptionsUpdate', {
+              Action: Building?.UnityUserAlternateTransferAction,
+              Enabled: Building?.UnityUserAlternateTransferEnabled,
+              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
+            } as TsfCiscoUnityCallhandlertransferoptionsUpdateCallArgs)
           }
       }
     // #endregion
