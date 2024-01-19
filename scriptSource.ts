@@ -8,7 +8,7 @@ import { nim } from "./nim";
 // - Test
 
 // #region Configuration
-  const readOnly = true
+  const readOnly = false
   const systemname_AD = "AD"
   const systemname_CUCM = "CiscoUCM"
   const systemname_Unity = "CiscoUnity"
@@ -440,7 +440,7 @@ import { nim } from "./nim";
     // #region Update Directory Number Description
       nim.logInfo("Updating Directory Number Description")
       nim.logInfo(
-        `UUID: [${PhoneLineUUID}] - newOwnerUsername: [${NewUserId}] - newAlertingName: [${NewPhoneName}]`
+        `UUID: [${PhoneLineUUID}] - newOwnerUsername: [${NewUserId}] - newAlertingName: [${NewPhoneName} - description: [${NewPhoneLabel}]`
       )
       
       if(!readOnly) {
