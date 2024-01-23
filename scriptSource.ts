@@ -621,9 +621,6 @@ import { nim } from "./nim";
             let uniqueParkedExtension = await generateUniqueRandom(parkedmailbox_ExtensionUpper, parkedmailbox_ExtensionLower, parkedExtensions)
             let currentTimestamp = await getCurrentTimestamp()
             
-            nim.logInfo("Storing parked mailbox internally")
-            await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
-            
             nim.logInfo(`Updating parked mailbox Unity user [${CurrentUnityUser.ObjectId}] to extension [${uniqueParkedExtension}]`)
             let i = 0
             while(true) {
@@ -644,6 +641,10 @@ import { nim } from "./nim";
               }
             }
             
+            nim.logInfo("Storing parked mailbox internally")
+            await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
+            
+
             if(currentOwnerADUser && currentOwnerADUser.sAMAccountName.length > 0) {
               nim.logInfo("Updating Current Owner AD User Account")
               nim.logInfo(`objectGUID: [${currentOwnerADUser.objectGUID}] - ipPhone: [${uniqueParkedExtension}] - telephoneNumber: [${uniqueParkedExtension}]`)
@@ -674,19 +675,29 @@ import { nim } from "./nim";
             CreateSmtpProxyFromCorp: 'true'
           } )
       
-        if(add_smtp_new_user) {
-          await nim.targetSystemFunctionRun(systemname_Unity,'SmtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newUnityUser.ObjectId })
-        }
+        if((newOwnerADUser?.mail ?? '').length > 0 ) {
+          if(add_smtp_new_user) {
+            try { 
+              await nim.targetSystemFunctionRun(systemname_Unity,'SmtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newUnityUser.ObjectId })
+            } catch(e) {
+              nim.logWarning(`Updating Unity user smtp address failed: ${e}`)
+            }
+          }
 
-        if(add_unifiedmessaging_user) {
-          await nim.targetSystemFunctionRun(systemname_Unity, 'usersexternalserviceaccountsCreate', {
-            ExternalServiceObjectId: UMExternalServiceId,
-            EnableCalendarCapability: 'true',
-            LoginType: '0',
-            EnableMailboxSynchCapability: "true",
-            EmailAddressUseCorp: 'true',
-            SubscriberObjectId: newUnityUser?.ObjectId ?? ''
-          })
+          if(add_unifiedmessaging_user) {
+            try {
+              await nim.targetSystemFunctionRun(systemname_Unity, 'usersexternalserviceaccountsCreate', {
+                ExternalServiceObjectId: UMExternalServiceId,
+                EnableCalendarCapability: 'true',
+                LoginType: '0',
+                EnableMailboxSynchCapability: "true",
+                EmailAddressUseCorp: 'true',
+                SubscriberObjectId: newUnityUser?.ObjectId ?? ''
+              })
+            } catch(e) {
+              nim.logWarning(`Updating Unity user external service account failed: ${e}`)
+            }
+          }
         }
 
         newOwnerUnityUser = await getUnityUser(NewUserId,false)
@@ -701,24 +712,30 @@ import { nim } from "./nim";
             DtmfAccessId: cucmPhoneLine.dirn_pattern
           })
 
-          if(add_smtp_new_user) {
-            try { 
-              await nim.targetSystemFunctionRun(systemname_Unity,'smtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newOwnerUnityUser?.ObjectId ?? '' })
-            } catch(e) {
-              nim.logWarning(`Updating Unity user smtp address failed: ${e}`)
+          if((newOwnerADUser?.mail ?? '').length > 0 ) {
+            if(add_smtp_new_user) {
+              try { 
+                await nim.targetSystemFunctionRun(systemname_Unity,'smtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newOwnerUnityUser?.ObjectId ?? '' })
+              } catch(e) {
+                nim.logWarning(`Updating Unity user smtp address failed: ${e}`)
+              }
             }
-          }
 
-          if(add_unifiedmessaging_user) {
-            await nim.targetSystemFunctionRun(systemname_Unity, 'usersexternalserviceaccountsCreate', {
-              ExternalServiceObjectId: UMExternalServiceId,
-              EnableCalendarCapability: 'true',
-              LoginType: '0',
-              EnableMailboxSynchCapability: "true",
-              EmailAddressUseCorp: 'true',
-              SubscriberObjectId: newOwnerUnityUser?.ObjectId ?? ''
-            })
-          }
+            if(add_unifiedmessaging_user) {
+              try {
+                await nim.targetSystemFunctionRun(systemname_Unity, 'usersexternalserviceaccountsCreate', {
+                  ExternalServiceObjectId: UMExternalServiceId,
+                  EnableCalendarCapability: 'true',
+                  LoginType: '0',
+                  EnableMailboxSynchCapability: "true",
+                  EmailAddressUseCorp: 'true',
+                  SubscriberObjectId: newOwnerUnityUser?.ObjectId ?? ''
+                })
+              } catch(e) {
+                nim.logWarning(`Updating Unity user external service account failed: ${e}`)
+              }
+            }
+        }
       }
       
 
@@ -727,8 +744,9 @@ import { nim } from "./nim";
 
     // #region Update New Owner Call Schedule
       nim.logInfo("Updating Unity call schedule for new owner")
+      nim.logInfo(`ObjectId [${newOwnerUnityUser?.CallHandlerObjectId}] - ScheduleSetObjectId [${Building?.UnityUserCallScheduleObjectId}]`)
       if(!readOnly) {
-        await nim.targetSystemFunctionRun(systemname_Unity,' userscallhandlersUpdate', {
+        await nim.targetSystemFunctionRun(systemname_Unity,'userscallhandlersUpdate', {
           ScheduleSetObjectId: Building?.UnityUserCallScheduleObjectId ?? '',
           ObjectId: newOwnerUnityUser?.CallHandlerObjectId ?? ''
         })
@@ -739,21 +757,33 @@ import { nim } from "./nim";
       nim.logInfo("Checking if User Transfer Rules enabled for Building")
       if(Building?.UnityUserTransferRulesEnabled) {
           nim.logInfo("Updating User Transfer Rules")
+          
+          nim.logInfo(`CallHandlerObjectId [${newOwnerUnityUser?.CallHandlerObjectId}] - Action [${Building?.UnityUserStandardTransferAction}] - Enabled [${Building?.UnityUserStandardTransferEnabled}]`)
           if(!readOnly) {
-            
             await nim.targetSystemFunctionRun(systemname_Unity,'callhandlertransferoptionsUpdate', {
+              TransferOptionType: "Standard",
               Action: Building?.UnityUserStandardTransferAction,
               Enabled: Building?.UnityUserStandardTransferEnabled,
               CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
             })
+          }
 
+          nim.logInfo(`CallHandlerObjectId [${newOwnerUnityUser?.CallHandlerObjectId}] - Action [${Building?.UnityUserClosedTransferAction}] - Enabled [${Building?.UnityUserClosedTransferEnabled}]`)
+          if(!readOnly) {
+            
             await nim.targetSystemFunctionRun(systemname_Unity,'callhandlertransferoptionsUpdate', {
+              TransferOptionType: "Off Hours",
               Action: Building?.UnityUserClosedTransferAction,
               Enabled: Building?.UnityUserClosedTransferEnabled,
               CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
             })
+          }
 
+
+          nim.logInfo(`CallHandlerObjectId [${newOwnerUnityUser?.CallHandlerObjectId}] - Action [${Building?.UnityUserAlternateTransferAction}] - Enabled [${Building?.UnityUserAlternateTransferEnabled}]`)
+          if(!readOnly) {
             await nim.targetSystemFunctionRun(systemname_Unity,'callhandlertransferoptionsUpdate', {
+              TransferOptionType: "Alternate",
               Action: Building?.UnityUserAlternateTransferAction,
               Enabled: Building?.UnityUserAlternateTransferEnabled,
               CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
