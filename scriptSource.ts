@@ -52,13 +52,13 @@ import { nim } from "./nim";
 
         // Skip Physical Phones
         if (!device.name.startsWith("SEP")) {
-          nim.logInfo(`Remove Device - [${device.name}]`)
+          nim.logInfo(`Remove Device [${device.name}] - PKID [${device.pkid}]`)
           if(!readOnly) {
             await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesDelete',{ uuid: device.pkid, name: device.name})
             await nim.targetSystemFunctionRun(systemname_CUCM, 'EndUserDeviceMapsDelete',{ pkid: device.pkid })
           }
         } else {
-          nim.logInfo(`Skipping Device Removal - [${device.name}]`)
+          nim.logInfo(`Skipping Device Removal [${device.name}] - PKID [${device.pkid}]`)
         }
       }
     } else {
@@ -402,7 +402,7 @@ import { nim } from "./nim";
           "App_Cisco_Script_GetParkedMailboxes"
         )
 
-        const parkedExtensions = parkedMailboxes.map(obj => obj.UnityUserExtension)
+        let parkedExtensions = parkedMailboxes.map(obj => obj.UnityUserExtension)
       // #endregion
 
       nim.logInfo("Validation completed")
@@ -440,26 +440,26 @@ import { nim } from "./nim";
     // #region Update Directory Number Description
       nim.logInfo("Updating Directory Number Description")
       nim.logInfo(
-        `UUID: [${PhoneLineUUID}] - newOwnerUsername: [${NewUserId}] - newAlertingName: [${NewPhoneName} - description: [${NewPhoneLabel}]`
+        `UUID: [${cucmPhoneLine.dirn_uuid}] - newOwnerUsername: [${NewUserId}] - newAlertingName: [${NewPhoneName} - description: [${NewPhoneLabel}]`
       )
       
       if(!readOnly) {
-        await nim.targetSystemFunctionRun(systemname_CUCM, 'LinesUpdate',{ uuid: PhoneLineUUID, description: NewPhoneLabel, alertingName: NewPhoneName, asciiAlertingName: NewPhoneName})
+        await nim.targetSystemFunctionRun(systemname_CUCM, 'LinesUpdate',{ uuid: cucmPhoneLine.dirn_uuid, description: NewPhoneLabel, alertingName: NewPhoneName, asciiAlertingName: NewPhoneName})
       }
     // #endregion
 
     // #region Update Device-To-Line Description
       nim.logInfo("Updating Device-To-Line Description")
       nim.logInfo(
-        `LineUUID: [${cucmPhoneLine.uuid}] - lineIndex: [${cucmPhoneLine.index}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName}] - newDescription: [${NewPhoneLabel}] - newName: [${NewPhoneName}] - newExternalCallingMask: [${ExternalPhoneNumberMask}]`
+        `LineUUID: [${cucmPhoneLine.uuid}] - lineIndex: [${cucmPhoneLine.index}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName_text}] - newDescription: [${NewPhoneLabel}] - newName: [${NewPhoneName}] - newExternalCallingMask: [${ExternalPhoneNumberMask}]`
       )
       
       if(!readOnly) {
         await nim.targetSystemFunctionRun(systemname_CUCM, 'PhoneLinesUpdate',{ 
-                                                                                                      uuid: cucmPhoneLine.uuid, 
+                                                                                                      uuid: cucmPhone.uuid, 
                                                                                                       index: cucmPhoneLine.index, 
                                                                                                       dirn_pattern: cucmPhoneLine.dirn_pattern, 
-                                                                                                      dirn_routePartitionName: cucmPhoneLine.dirn_routePartitionName, 
+                                                                                                      dirn_routePartitionName_text: cucmPhoneLine.dirn_routePartitionName_text, 
                                                                                                       label: NewPhoneLabel,
                                                                                                       display: NewPhoneName, 
                                                                                                       e164Mask: ExternalPhoneNumberMask })
@@ -472,7 +472,7 @@ import { nim } from "./nim";
       `LineUUID: [${cucmPhoneLine.uuid}] - newOwnerUsername: [${NewUserId}]`
     )
     if(!readOnly) {
-      let UpdatePhoneOwner = await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhoneLine.uuid,ownerUserName: NewUserId })
+      let UpdatePhoneOwner = await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName: NewUserId })
     }
     // #endregion
 
@@ -625,10 +625,24 @@ import { nim } from "./nim";
             await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
             
             nim.logInfo(`Updating parked mailbox Unity user [${CurrentUnityUser.ObjectId}] to extension [${uniqueParkedExtension}]`)
-            await nim.targetSystemFunctionRun(systemname_Unity, 'UserUpdate', {
-              ObjectId: CurrentUnityUser.ObjectId,
-              DtmfAccessId: uniqueParkedExtension
-            } )
+            let i = 0
+            while(true) {
+              try {
+                await nim.targetSystemFunctionRun(systemname_Unity,'userUpdate', {
+                  ObjectId: CurrentUnityUser.ObjectId,
+                  DtmfAccessId: uniqueParkedExtension
+                } );
+                break;
+              } catch(e) {
+                i++;
+                if(i < 10) {
+                  parkedExtensions.push(uniqueParkedExtension)
+                  uniqueParkedExtension = await generateUniqueRandom(parkedmailbox_ExtensionUpper, parkedmailbox_ExtensionLower, parkedExtensions)
+                } else {
+                  throw new Error("Failed to find unique parked extension after 10 attempts")
+                }
+              }
+            }
             
             if(currentOwnerADUser && currentOwnerADUser.sAMAccountName.length > 0) {
               nim.logInfo("Updating Current Owner AD User Account")
@@ -649,7 +663,7 @@ import { nim } from "./nim";
       if(!readOnly) {
         let LdapType = ldap_enabled ? '3' : '0'
 
-        let newUnityUser = await nim.targetSystemFunctionRun(systemname_Unity, 'UserCreate',{ 
+        let newUnityUser = await nim.targetSystemFunctionRun(systemname_Unity, 'userCreate',{ 
             Alias: NewUserId, 
             EmailAddress: newOwnerADUser?.mail ?? '', 
             FirstName: newOwnerADUser?.givenName ?? '', 
@@ -665,7 +679,7 @@ import { nim } from "./nim";
         }
 
         if(add_unifiedmessaging_user) {
-          await nim.targetSystemFunctionRun(systemname_Unity, 'UsersexternalserviceaccountsCreate', {
+          await nim.targetSystemFunctionRun(systemname_Unity, 'usersexternalserviceaccountsCreate', {
             ExternalServiceObjectId: UMExternalServiceId,
             EnableCalendarCapability: 'true',
             LoginType: '0',
@@ -682,17 +696,21 @@ import { nim } from "./nim";
       if(!readOnly) {
 
         nim.logInfo(`Updating Unity user [${newOwnerUnityUser?.ObjectId}] to extension [${cucmPhoneLine.dirn_pattern}]`)
-          await nim.targetSystemFunctionRun(systemname_Unity, 'UserUpdate', {
+          await nim.targetSystemFunctionRun(systemname_Unity, 'userUpdate', {
             ObjectId: newOwnerUnityUser?.ObjectId,
             DtmfAccessId: cucmPhoneLine.dirn_pattern
           })
 
           if(add_smtp_new_user) {
-            await nim.targetSystemFunctionRun(systemname_Unity,'SmtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newOwnerUnityUser?.ObjectId ?? '' })
+            try { 
+              await nim.targetSystemFunctionRun(systemname_Unity,'smtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newOwnerUnityUser?.ObjectId ?? '' })
+            } catch(e) {
+              nim.logWarning(`Updating Unity user smtp address failed: ${e}`)
+            }
           }
 
           if(add_unifiedmessaging_user) {
-            await nim.targetSystemFunctionRun(systemname_Unity, 'UsersexternalserviceaccountsCreate', {
+            await nim.targetSystemFunctionRun(systemname_Unity, 'usersexternalserviceaccountsCreate', {
               ExternalServiceObjectId: UMExternalServiceId,
               EnableCalendarCapability: 'true',
               LoginType: '0',
@@ -710,7 +728,7 @@ import { nim } from "./nim";
     // #region Update New Owner Call Schedule
       nim.logInfo("Updating Unity call schedule for new owner")
       if(!readOnly) {
-        await nim.targetSystemFunctionRun(systemname_Unity,'UserscallhandlersUpdate', {
+        await nim.targetSystemFunctionRun(systemname_Unity,' userscallhandlersUpdate', {
           ScheduleSetObjectId: Building?.UnityUserCallScheduleObjectId ?? '',
           ObjectId: newOwnerUnityUser?.CallHandlerObjectId ?? ''
         })
@@ -723,19 +741,19 @@ import { nim } from "./nim";
           nim.logInfo("Updating User Transfer Rules")
           if(!readOnly) {
             
-            await nim.targetSystemFunctionRun(systemname_Unity,'CallhandlertransferoptionsUpdate', {
+            await nim.targetSystemFunctionRun(systemname_Unity,'callhandlertransferoptionsUpdate', {
               Action: Building?.UnityUserStandardTransferAction,
               Enabled: Building?.UnityUserStandardTransferEnabled,
               CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
             })
 
-            await nim.targetSystemFunctionRun(systemname_Unity,'CallhandlertransferoptionsUpdate', {
+            await nim.targetSystemFunctionRun(systemname_Unity,'callhandlertransferoptionsUpdate', {
               Action: Building?.UnityUserClosedTransferAction,
               Enabled: Building?.UnityUserClosedTransferEnabled,
               CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
             })
 
-            await nim.targetSystemFunctionRun(systemname_Unity,'CallhandlertransferoptionsUpdate', {
+            await nim.targetSystemFunctionRun(systemname_Unity,'callhandlertransferoptionsUpdate', {
               Action: Building?.UnityUserAlternateTransferAction,
               Enabled: Building?.UnityUserAlternateTransferEnabled,
               CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
