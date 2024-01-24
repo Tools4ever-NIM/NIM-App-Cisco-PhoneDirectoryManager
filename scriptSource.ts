@@ -467,12 +467,12 @@ import { nim } from "./nim";
     // #endregion
 
     // #region Update the Phone Owner
-    nim.logInfo("Updating Phone Owner")
+    nim.logInfo("Updating Phone Owner (remove all existing mapped users)")
     nim.logInfo(
-      `LineUUID: [${cucmPhoneLine.uuid}] - newOwnerUsername: [${NewUserId}]`
+      `PhoneUUID: [${cucmPhone.uuid}] - newOwnerUsername: [${NewUserId}]`
     )
     if(!readOnly) {
-      let UpdatePhoneOwner = await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName: NewUserId })
+      await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName: NewUserId,removeAllUsersForDevice: 'True' })
     }
     // #endregion
 
@@ -792,4 +792,5 @@ import { nim } from "./nim";
       }
     // #endregion
   }
+// #endregion
 // #endregion
