@@ -451,12 +451,13 @@ import { nim } from "./nim";
     // #region Update Device-To-Line Description
       nim.logInfo("Updating Device-To-Line Description")
       nim.logInfo(
-        `LineUUID: [${cucmPhoneLine.uuid}] - lineIndex: [${cucmPhoneLine.index}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName_text}] - newDescription: [${NewPhoneLabel}] - newName: [${NewPhoneName}] - newExternalCallingMask: [${ExternalPhoneNumberMask}]`
+        `LineUUID: [${cucmPhoneLine.uuid}] - PhoneUUID: [${cucmPhone.uuid}] - lineIndex: [${cucmPhoneLine.index}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName_text}] - newDescription: [${NewPhoneLabel}] - newName: [${NewPhoneName}] - newExternalCallingMask: [${ExternalPhoneNumberMask}]`
       )
       
       if(!readOnly) {
         await nim.targetSystemFunctionRun(systemname_CUCM, 'PhoneLinesUpdate',{ 
-                                                                                                      uuid: cucmPhone.uuid, 
+                                                                                                      uuid: cucmPhoneLine.uuid, 
+                                                                                                      phone_uuid: cucmPhone.uuid,
                                                                                                       index: cucmPhoneLine.index, 
                                                                                                       dirn_pattern: cucmPhoneLine.dirn_pattern, 
                                                                                                       dirn_routePartitionName_text: cucmPhoneLine.dirn_routePartitionName_text, 
@@ -467,12 +468,10 @@ import { nim } from "./nim";
     // #endregion
 
     // #region Update the Phone Owner
-    nim.logInfo("Updating Phone Owner (remove all existing mapped users)")
-    nim.logInfo(
-      `PhoneUUID: [${cucmPhone.uuid}] - newOwnerUsername: [${NewUserId}]`
-    )
+    nim.logInfo("Updating Phone Owner")
+    nim.logInfo(`PhoneUUID: [${cucmPhone.uuid}] - newOwnerUsername: [${NewUserId}]`)
     if(!readOnly) {
-      await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName: NewUserId,removeAllUsersForDevice: 'True' })
+      await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName_text: NewUserId,removeAllUsersForDevice: 'True' })
     }
     // #endregion
 
@@ -580,10 +579,11 @@ import { nim } from "./nim";
     // #endregion
 
     // #region Update New Owner associated devices with all phone names
-      nim.logInfo("Update New Owner Associated devices phone names")
-      const newOwnerDevices = await getOwnerAssociatedDevices(NewUserId)
+      nim.logInfo("Update New Owner Associated devices phone names  (remove all existing mapped users)")
+      const newOwnerDevices = await getOwnerAssociatedDevices(NewUserId);
+        nim.logInfo(`fkdevice: [${cucmPhoneLine.device_pkid}] - fkenduser: [${newOwnerCUCMUser.pkid}] - tkuserassociation: [1] - RemoveAllUsersForDevice: [True]`)
       if(!readOnly) {
-        await nim.targetSystemFunctionRun(systemname_CUCM, 'EndUserDeviceMapsCreate',{ fkdevice: cucmPhoneLine.device_pkid, fkenduser: newOwnerCUCMUser.pkid, tkuserassociation: '1' })
+        await nim.targetSystemFunctionRun(systemname_CUCM, 'EndUserDeviceMapsCreate',{ fkdevice: cucmPhoneLine.device_pkid, fkenduser: newOwnerCUCMUser.pkid, tkuserassociation: '1', removeAllUsersForDevice: 'True' })
       }
       
     // #endregion
@@ -610,10 +610,11 @@ import { nim } from "./nim";
 
     // #region Reassign current extension owner, Update AD User
       nim.logInfo("Checking target extension is taken in Unity")
+      let SkipExtensionOwner = false
       if(await checkExtensionAssigned(cucmPhoneLine.dirn_pattern)) {
         let CurrentUnityUser = await getUnityUserByExtension(cucmPhoneLine.dirn_pattern)
 
-        if(CurrentUnityUser.Alias.toLowerCase() !== newOwnerADUser?.sAMAccountName.toLowerCase()) {
+        if(CurrentUnityUser.Alias.toLowerCase() !== newOwnerADUser?.sAMAccountName.toLowerCase() && CurrentUnityUser.Alias.length > 0) {
           
           if(!readOnly) {
             //Get unique advailable parked extension
@@ -651,7 +652,9 @@ import { nim } from "./nim";
               await nim.targetSystemFunctionRun(systemname_AD, 'UserUpdate',{ objectGUID: currentOwnerADUser?.objectGUID ?? '', ipPhone: uniqueParkedExtension, telephoneNumber: uniqueParkedExtension } )
             }
           }
-        } 
+        } else {
+          SkipExtensionOwner = true
+        }
       }
     // #endregion
 
@@ -705,13 +708,16 @@ import { nim } from "./nim";
     } else {
       nim.logInfo("Updating Unity user account for new owner")
       if(!readOnly) {
-
+        
+        if(!SkipExtensionOwner) {
         nim.logInfo(`Updating Unity user [${newOwnerUnityUser?.ObjectId}] to extension [${cucmPhoneLine.dirn_pattern}]`)
           await nim.targetSystemFunctionRun(systemname_Unity, 'userUpdate', {
             ObjectId: newOwnerUnityUser?.ObjectId,
             DtmfAccessId: cucmPhoneLine.dirn_pattern
           })
-
+        } else {
+          nim.logInfo('Owner is already properly assigned, skipping assignment')
+        }
           if((newOwnerADUser?.mail ?? '').length > 0 ) {
             if(add_smtp_new_user) {
               try { 
@@ -792,5 +798,4 @@ import { nim } from "./nim";
       }
     // #endregion
   }
-// #endregion
 // #endregion
