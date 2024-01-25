@@ -359,7 +359,7 @@ import { nim } from "./nim";
     BuildingID: number,
     ExternalPhoneNumberMask: string,
     //ProvisionSoftPhone: boolean,
-    CurrentUserId: string,
+    CurrentUserId: string = '',
     NewUserId: string,
     NewPhoneLabel: string,
     NewPhoneName: string
@@ -369,7 +369,7 @@ import { nim } from "./nim";
 
       // #region Retrieve Current Owner AD Account
       nim.logInfo("Retrieving current AD user account")
-        const currentOwnerADUser = await getADUser(CurrentUserId)
+        const currentOwnerADUser = await getADUser(CurrentUserId,true)
       // #endregion
 
       // #region Retrieve New Owner AD Account
@@ -407,10 +407,13 @@ import { nim } from "./nim";
 
       nim.logInfo("Validation completed")
     // #endregion
-
+	
+    
     // #region Previous Owner Devices
-      nim.logInfo("Check if previous owner has associated devices and remove them")
-      await removeOwnerDevices(CurrentUserId)
+      if(CurrentUserId.length > 0) {    
+          nim.logInfo("Check if previous owner has associated devices and remove them")
+          await removeOwnerDevices(CurrentUserId)
+      }
     // #endregion
 
     // #region New Owner User Account
@@ -609,53 +612,56 @@ import { nim } from "./nim";
     // #endregion
 
     // #region Reassign current extension owner, Update AD User
-      nim.logInfo("Checking target extension is taken in Unity")
-      let SkipExtensionOwner = false
-      if(await checkExtensionAssigned(cucmPhoneLine.dirn_pattern)) {
-        let CurrentUnityUser = await getUnityUserByExtension(cucmPhoneLine.dirn_pattern)
+    	let SkipExtensionOwner = false  
+    	if(CurrentUserId.length > 0) {   
+          nim.logInfo("Checking target extension is taken in Unity")
 
-        if(CurrentUnityUser.Alias.toLowerCase() !== newOwnerADUser?.sAMAccountName.toLowerCase() && CurrentUnityUser.Alias.length > 0) {
-          
-          if(!readOnly) {
-            //Get unique advailable parked extension
-            nim.logInfo("Generating random parked mailbox extension")
-            let uniqueParkedExtension = await generateUniqueRandom(parkedmailbox_ExtensionUpper, parkedmailbox_ExtensionLower, parkedExtensions)
-            let currentTimestamp = await getCurrentTimestamp()
-            
-            nim.logInfo(`Updating parked mailbox Unity user [${CurrentUnityUser.ObjectId}] to extension [${uniqueParkedExtension}]`)
-            let i = 0
-            while(true) {
-              try {
-                await nim.targetSystemFunctionRun(systemname_Unity,'userUpdate', {
-                  ObjectId: CurrentUnityUser.ObjectId,
-                  DtmfAccessId: uniqueParkedExtension
-                } );
-                break;
-              } catch(e) {
-                i++;
-                if(i < 10) {
-                  parkedExtensions.push(uniqueParkedExtension)
-                  uniqueParkedExtension = await generateUniqueRandom(parkedmailbox_ExtensionUpper, parkedmailbox_ExtensionLower, parkedExtensions)
-                } else {
-                  throw new Error("Failed to find unique parked extension after 10 attempts")
+          if(await checkExtensionAssigned(cucmPhoneLine.dirn_pattern)) {
+            let CurrentUnityUser = await getUnityUserByExtension(cucmPhoneLine.dirn_pattern)
+
+            if(CurrentUnityUser.Alias.toLowerCase() !== newOwnerADUser?.sAMAccountName.toLowerCase() && CurrentUnityUser.Alias.length > 0) {
+
+              if(!readOnly) {
+                //Get unique advailable parked extension
+                nim.logInfo("Generating random parked mailbox extension")
+                let uniqueParkedExtension = await generateUniqueRandom(parkedmailbox_ExtensionUpper, parkedmailbox_ExtensionLower, parkedExtensions)
+                let currentTimestamp = await getCurrentTimestamp()
+
+                nim.logInfo(`Updating parked mailbox Unity user [${CurrentUnityUser.ObjectId}] to extension [${uniqueParkedExtension}]`)
+                let i = 0
+                while(true) {
+                  try {
+                    await nim.targetSystemFunctionRun(systemname_Unity,'userUpdate', {
+                      ObjectId: CurrentUnityUser.ObjectId,
+                      DtmfAccessId: uniqueParkedExtension
+                    } );
+                    break;
+                  } catch(e) {
+                    i++;
+                    if(i < 10) {
+                      parkedExtensions.push(uniqueParkedExtension)
+                      uniqueParkedExtension = await generateUniqueRandom(parkedmailbox_ExtensionUpper, parkedmailbox_ExtensionLower, parkedExtensions)
+                    } else {
+                      throw new Error("Failed to find unique parked extension after 10 attempts")
+                    }
+                  }
+                }
+
+                nim.logInfo("Storing parked mailbox internally")
+                await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
+
+
+                if(currentOwnerADUser && currentOwnerADUser.sAMAccountName.length > 0) {
+                  nim.logInfo("Updating Current Owner AD User Account")
+                  nim.logInfo(`objectGUID: [${currentOwnerADUser.objectGUID}] - ipPhone: [${uniqueParkedExtension}] - telephoneNumber: [${uniqueParkedExtension}]`)
+                  await nim.targetSystemFunctionRun(systemname_AD, 'UserUpdate',{ objectGUID: currentOwnerADUser?.objectGUID ?? '', ipPhone: uniqueParkedExtension, telephoneNumber: uniqueParkedExtension } )
                 }
               }
-            }
-            
-            nim.logInfo("Storing parked mailbox internally")
-            await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
-            
-
-            if(currentOwnerADUser && currentOwnerADUser.sAMAccountName.length > 0) {
-              nim.logInfo("Updating Current Owner AD User Account")
-              nim.logInfo(`objectGUID: [${currentOwnerADUser.objectGUID}] - ipPhone: [${uniqueParkedExtension}] - telephoneNumber: [${uniqueParkedExtension}]`)
-              await nim.targetSystemFunctionRun(systemname_AD, 'UserUpdate',{ objectGUID: currentOwnerADUser?.objectGUID ?? '', ipPhone: uniqueParkedExtension, telephoneNumber: uniqueParkedExtension } )
+            } else {
+              SkipExtensionOwner = true
             }
           }
-        } else {
-          SkipExtensionOwner = true
-        }
-      }
+        } else { SkipExtensionOwner = true }
     // #endregion
 
     // #region Check New Owner in Unity
