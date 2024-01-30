@@ -470,17 +470,17 @@ import { nim } from "./nim";
       }
     // #endregion
 
-    // #region Update the Phone Owner
-    nim.logInfo("Updating Phone Owner")
-    nim.logInfo(`PhoneUUID: [${cucmPhone.uuid}] - newOwnerUsername: [${NewUserId}]`)
-    if(!readOnly) {
-      await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName_text: NewUserId,removeAllUsersForDevice: 'True' })
-    }
-    // #endregion
-
     // #region New Owner Devices
       nim.logInfo("Check if new owner has associated devices and remove")
       await removeOwnerDevices(NewUserId)
+    // #endregion
+
+    // #region Update the Phone Owner
+      nim.logInfo("Updating Phone Owner")
+      nim.logInfo(`PhoneUUID: [${cucmPhone.uuid}] - newOwnerUsername: [${NewUserId}]`)
+      if(!readOnly) {
+        await nim.targetSystemFunctionRun(systemname_CUCM, 'PhonesUpdate',{ uuid: cucmPhone.uuid,ownerUserName_text: NewUserId})
+      }
     // #endregion
 
     // #region Update Soft Phone for new user
@@ -597,7 +597,7 @@ import { nim } from "./nim";
         `newOwnerUsername: [${NewUserId}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName}]`
       )
       if(!readOnly) {
-        await nim.targetSystemFunctionRun(systemname_CUCM,'PhonesUpdate',{ uuid: cucmPhone.uuid, ownerUserName:NewUserId})
+        await nim.targetSystemFunctionRun(systemname_CUCM,'EndUsersUpdate',{ userid: NewUserId, dnorpattern: cucmPhoneLine.dirn_pattern, routePartitionName: cucmPhoneLine.dirn_routePartitionName})
       }
     // #endregion
 
@@ -649,6 +649,14 @@ import { nim } from "./nim";
             nim.logInfo("Storing parked mailbox internally")
             await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
 
+            nim.logInfo("Updating Current CUCM User Extension")
+            await nim.targetSystemFunctionRun(systemname_CUCM,'EndUsersUpdate',{ userid: CurrentUserId, dnorpattern: uniqueParkedExtension, routePartitionName: cucmPhoneLine.dirn_routePartitionName})
+
+            nim.logInfo("Updating Current Unity User Extension")
+            await nim.targetSystemFunctionRun(systemname_Unity, 'userUpdate', {
+              ObjectId: CurrentUnityUser?.ObjectId ?? '',
+              DtmfAccessId: uniqueParkedExtension
+            })
 
             if(currentOwnerADUser && currentOwnerADUser.sAMAccountName.length > 0) {
               nim.logInfo("Updating Current Owner AD User Account")
@@ -685,7 +693,7 @@ import { nim } from "./nim";
         if((newOwnerADUser?.mail ?? '').length > 0 ) {
           if(add_smtp_new_user) {
             try { 
-              await nim.targetSystemFunctionRun(systemname_Unity,'SmtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newUnityUser.ObjectId })
+              await nim.targetSystemFunctionRun(systemname_Unity,'smtpproxyaddressesCreate',{ SmtpAddress: newOwnerADUser?.mail ?? '', ObjectGlobalUserObjectId: newUnityUser.ObjectId })
             } catch(e) {
               nim.logWarning(`Updating Unity user smtp address failed: ${e}`)
             }
@@ -716,7 +724,7 @@ import { nim } from "./nim";
         if(!SkipExtensionOwner) {
         nim.logInfo(`Updating Unity user [${newOwnerUnityUser?.ObjectId}] to extension [${cucmPhoneLine.dirn_pattern}]`)
           await nim.targetSystemFunctionRun(systemname_Unity, 'userUpdate', {
-            ObjectId: newOwnerUnityUser?.ObjectId,
+            ObjectId: newOwnerUnityUser?.ObjectId ?? '',
             DtmfAccessId: cucmPhoneLine.dirn_pattern
           })
         } else {
@@ -774,7 +782,7 @@ import { nim } from "./nim";
               TransferOptionType: "Standard",
               Action: Building?.UnityUserStandardTransferAction,
               Enabled: Building?.UnityUserStandardTransferEnabled,
-              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
+              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId ?? ''
             })
           }
 
@@ -785,7 +793,7 @@ import { nim } from "./nim";
               TransferOptionType: "Off Hours",
               Action: Building?.UnityUserClosedTransferAction,
               Enabled: Building?.UnityUserClosedTransferEnabled,
-              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
+              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId ?? ''
             })
           }
 
@@ -796,7 +804,7 @@ import { nim } from "./nim";
               TransferOptionType: "Alternate",
               Action: Building?.UnityUserAlternateTransferAction,
               Enabled: Building?.UnityUserAlternateTransferEnabled,
-              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId
+              CallHandlerObjectId: newOwnerUnityUser?.CallHandlerObjectId ?? ''
             })
           }
       }
