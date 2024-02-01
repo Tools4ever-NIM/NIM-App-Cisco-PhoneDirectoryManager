@@ -377,6 +377,19 @@ import { nim } from "./nim";
         const newOwnerADUser = await getADUser(NewUserId)
       // #endregion
 
+      // #region Retrieve Current Owner CUCM User
+      let currentOwnerCUCMUser = {
+        pkid: ''
+      }
+      const currentOwnerCUCMUserResults = await nim.filterExecute(
+        "App_Cisco_Script_GetCUCMUser",
+        { UserId: CurrentUserId })
+
+        if (currentOwnerCUCMUserResults && currentOwnerCUCMUserResults?.length == 1) {
+          currentOwnerCUCMUser.pkid = currentOwnerCUCMUserResults[0].pkid
+        } 
+      // #endregion
+
       // #region Retrieve CUCM Phone Line
         nim.logInfo("Retrieving CUCM Phone Line")
         const cucmPhoneLine = await getCUCMPhoneLine(PhoneLineUUID)
@@ -597,7 +610,7 @@ import { nim } from "./nim";
         `newOwnerUsername: [${NewUserId}] - dirnPattern: [${cucmPhoneLine.dirn_pattern}] - dirnRoutePartitionName: [${cucmPhoneLine.dirn_routePartitionName}]`
       )
       if(!readOnly) {
-        await nim.targetSystemFunctionRun(systemname_CUCM,'EndUsersUpdate',{ userid: NewUserId, dnorpattern: cucmPhoneLine.dirn_pattern, routePartitionName: cucmPhoneLine.dirn_routePartitionName})
+        await nim.targetSystemFunctionRun(systemname_CUCM,'EndUsersUpdate',{ pkid: newOwnerCUCMUser.pkid ,userid: NewUserId, dnorpattern: cucmPhoneLine.dirn_pattern, routePartitionName: cucmPhoneLine.dirn_routePartitionName})
       }
     // #endregion
 
@@ -650,7 +663,7 @@ import { nim } from "./nim";
             await nim.targetSystemFunctionRun('internal', 'Cisco_MailboxParking_create', { UnityUserObjectId: CurrentUnityUser.ObjectId, UnityUserAlias: CurrentUnityUser.Alias, UnityUserExtension: uniqueParkedExtension, DateCreated: currentTimestamp, Deleted: '0'})
 
             nim.logInfo("Updating Current CUCM User Extension")
-            await nim.targetSystemFunctionRun(systemname_CUCM,'EndUsersUpdate',{ userid: CurrentUserId, dnorpattern: uniqueParkedExtension, routePartitionName: cucmPhoneLine.dirn_routePartitionName})
+            await nim.targetSystemFunctionRun(systemname_CUCM,'EndUsersUpdate',{ pkid:currentOwnerCUCMUser.pkid , userid: CurrentUserId, dnorpattern: uniqueParkedExtension, routePartitionName: cucmPhoneLine.dirn_routePartitionName})
 
             nim.logInfo("Updating Current Unity User Extension")
             await nim.targetSystemFunctionRun(systemname_Unity, 'userUpdate', {
